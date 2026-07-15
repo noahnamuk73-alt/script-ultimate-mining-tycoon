@@ -7,7 +7,7 @@ local Lighting      = game:GetService("Lighting")
 local LocalPlayer   = Players.LocalPlayer
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  LINORIA BOILERPLATE (UPDATED URL)
+--  LINORIA BOILERPLATE (LINK ESTÁVEL CORRIGIDO)
 -- ══════════════════════════════════════════════════════════════════════════════
 local repo = 'https://githubusercontent.com'
 
