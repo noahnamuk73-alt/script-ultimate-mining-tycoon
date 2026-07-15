@@ -60,7 +60,7 @@ local AutoMineGroup = Tabs.Ores:AddRightGroupbox('Auto Mine Settings')
 
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  ORE ESP (OPTIMIZED FOR 240 FPS WITH NAMES)
+--  ORE ESP & NAME ESP (OPTIMIZED FOR 240 FPS WITH NAMES)
 -- ══════════════════════════════════════════════════════════════════════════════
 local function addOreESP(part)
 	if not part:IsA("BasePart") then return end
@@ -118,6 +118,10 @@ local function removeOreESP(part)
 		if data.billboard then data.billboard:Destroy() end
 		oreAdornments[part] = nil
 	end
+end
+
+local function clearAllOreESP()
+	for part in pairs(oreAdornments) do removeOreESP(part) end
 end
 
 OreESPGroup:AddToggle('OreESP', {
@@ -226,71 +230,99 @@ end)
 
 
 -- ══════════════════════════════════════════════════════════════════════════════
---  INITIALIZATION & CYCLE HANDLING
+--  ABA MISC (MOVEMENT, UTILITIES & AUTO SELL)
 -- ══════════════════════════════════════════════════════════════════════════════
-local function setupOreConnections(placedOre)
-	for _, desc in placedOre:GetDescendants() do
-		if desc:IsA("BasePart") then addOreESP(desc) end
+local MiscMove = Tabs.Misc:AddLeftGroupbox('Movement')
+local MiscUtils = Tabs.Misc:AddLeftGroupbox('Utilities')
+local MiscSell = Tabs.Misc:AddRightGroupbox('Auto Sell')
+
+local DEFAULT_SPEED = 16
+local BOOST_SPEED   = 50
+local walkBoostOn   = false
+local infJumpOn     = false
+local noclipOn      = false
+
+local function applyWalkSpeed(speed)
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then hum.WalkSpeed = speed end
+end
+
+track(LocalPlayer.CharacterAdded:Connect(function(char)
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum and walkBoostOn then hum.WalkSpeed = BOOST_SPEED end
+end))
+
+MiscMove:AddSlider('BoostSpeed', { Text = 'Boost WalkSpeed', Default = 50, Min = 16, Max = 250, Rounding = 0, Callback = function(v) BOOST_SPEED = v if walkBoostOn then applyWalkSpeed(BOOST_SPEED) end end })
+MiscMove:AddToggle('WalkBoost', {
+	Text = 'WalkSpeed Boost',
+	Default = false,
+	Callback = function(Value)
+		walkBoostOn = Value
+		applyWalkSpeed(Value and BOOST_SPEED or DEFAULT_SPEED)
 	end
+}):AddKeyPicker('WalkBoostKey', {
+	Default = 'F1',
+	SyncToggleState = true,
+	Mode = 'Toggle',
+	Text = 'WalkSpeed Boost'
+})
 
-	track(placedOre.DescendantAdded:Connect(function(desc)
-		if desc:IsA("BasePart") then addOreESP(desc) end
-	end))
-	track(placedOre.DescendantRemoving:Connect(function(desc)
-		removeOreESP(desc)
-	end))
-	
-	local lastDistanceCheck = 0
+MiscMove:AddToggle('InfJump', { Text = 'Infinite Jump', Default = false, Callback = function(v) infJumpOn = v end })
+MiscMove:AddToggle('Noclip', { Text = 'Noclip', Default = false, Callback = function(v) noclipOn = v end })
 
-	track(RunService.RenderStepped:Connect(function()
+track(UIS.JumpRequest:Connect(function()
+	if infJumpOn then
 		local char = LocalPlayer.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local camera = workspace.CurrentCamera
-		
-		local now = os.clock()
-		local shouldUpdateDistance = false
-		if now - lastDistanceCheck > 0.3 then
-			shouldUpdateDistance = true
-			lastDistanceCheck = now
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 		end
-		
-		for part, data in pairs(oreAdornments) do
-			if part and part.Parent and hrp then
-				if shouldUpdateDistance then
-					local dist = (hrp.Position - part.Position).Magnitude
-					data.inRange = dist <= maxEspDistance
-					
-					if data.box then data.box.Visible = oreESPEnabled and data.inRange end
-					if data.billboard then data.billboard.Visible = nameESPEnabled and data.inRange end
+	end
+end))
+
+track(RunService.Stepped:Connect(function()
+	if noclipOn then
+		local char = LocalPlayer.Character
+		if char then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") and part.CanCollide then
+					part.CanCollide = false
 				end
-				
-				if showTracers and data.inRange and oreESPEnabled then
-					local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
-					if onScreen then
-						data.tracer.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
-						data.tracer.To = Vector2.new(screenPos.X, screenPos.Y)
-						data.tracer.Visible = true
-					else
-						data.tracer.Visible = false
-					end
-				else
-					if data.tracer.Visible then data.tracer.Visible = false end
-				end
-			else
-				if data.box then data.box.Visible = false end
-				if data.billboard then data.billboard.Visible = false end
-				if data.tracer.Visible then data.tracer.Visible = false end
 			end
 		end
-	end))
-end
+	end
+end))
 
-local existingPlacedOre = workspace:FindFirstChild("PlacedOre")
-if existingPlacedOre then
-	setupOreConnections(existingPlacedOre)
-else
-	task.spawn(function()
-		local placedOre = workspace:WaitForChild("PlacedOre", 60)
-		if placedOre then setupOreConnections(placedOre) end
-	end)
-end
+MiscUtils:AddButton({
+	Text = 'Refresh Cooldowns',
+	Tooltip = 'Kills your character and teleports you back',
+	Func = function()
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp, hum = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChildOfClass("Humanoid")
+		if not hrp or not hum then return end
+		local savedCFrame = hrp.CFrame
+		local conn
+		conn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+			conn:Disconnect()
+			local newHRP = newChar:WaitForChild("HumanoidRootPart", 10)
+			if newHRP then task.wait(0.2) newHRP.CFrame = savedCFrame end
+		end)
+		hum.Health = 0
+	end
+})
+
+
+-- ══════════════════════════════════════════════════════════════════════════════
+--  AUTO SELL LOGIC
+-- ══════════════════════════════════════════════════════════════════════════════
+local autoSellEnabled = false
+local autoSellThread  = nil
+local SELL_INTERVAL   = 60
+
+local function getUnloader()
+	local ok, result = pcall(function() return workspace.FactoryGridItemsClient.DSBuild3.DSBuild3.Unloader1 end)
+	if ok and result then return result end
+	
